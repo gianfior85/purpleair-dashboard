@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PurpleAir Sensor 28531 — Historical Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0e17;
+    --surface: #111827;
+    --surface2: #1a2234;
+    --border: #1e293b;
+    --text: #e2e8f0;
+    --text-dim: #64748b;
+    --accent: #7c3aed;
+    --good: #22c55e;
+    --moderate: #eab308;
+    --unhealthy-sg: #f97316;
+    --unhealthy: #ef4444;
+    --very-unhealthy: #a855f7;
+    --hazardous: #7f1d1d;
+    --radius: 12px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Atmospheric grain */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; padding: 24px; }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .logo-area { display: flex; align-items: center; gap: 14px; }
+
+  .logo-icon {
+    width: 44px; height: 44px;
+    background: linear-gradient(135deg, var(--accent), #a78bfa);
+    border-radius: 10px;
+    display: grid; place-items: center;
+    font-size: 22px;
+    box-shadow: 0 0 24px rgba(124, 58, 237, 0.3);
+  }
+
+  h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.3px; }
+  h1 span { color: var(--text-dim); font-weight: 400; font-size: 14px; display: block; margin-top: 2px; }
+
+  /* Setup panel */
+  .setup-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 32px;
+    margin-bottom: 28px;
+  }
+
+  .setup-panel h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .setup-panel p { font-size: 13px; color: var(--text-dim); margin-bottom: 18px; line-height: 1.5; }
+
+  .setup-row {
+    display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 12px; font-weight: 500; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .field input, .field select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); }
+  .field input::placeholder { color: #334155; }
+
+  .btn {
+    background: linear-gradient(135deg, var(--accent), #6d28d9);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.2s;
+    white-space: nowrap;
+  }
+  .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(124,58,237,0.35); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  .btn-secondary {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.3); }
+
+  /* Status bar */
+  .status-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 24px;
+    font-size: 13px;
+    color: var(--text-dim);
+    min-height: 48px;
+  }
+  .status-bar .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .status-bar.error { border-color: #7f1d1d; color: #fca5a5; }
+  .status-bar.success { border-color: #14532d; color: #86efac; }
+
+  /* KPI cards */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .kpi::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .kpi.aqi-current::before { background: linear-gradient(90deg, var(--good), var(--moderate)); }
+  .kpi.aqi-max::before { background: linear-gradient(90deg, var(--unhealthy), var(--hazardous)); }
+  .kpi.aqi-avg::before { background: linear-gradient(90deg, var(--moderate), var(--unhealthy-sg)); }
+  .kpi.temp::before { background: linear-gradient(90deg, #38bdf8, #f97316); }
+  .kpi.humidity::before { background: linear-gradient(90deg, #06b6d4, #3b82f6); }
+  .kpi.datapoints::before { background: linear-gradient(90deg, var(--accent), #a78bfa); }
+
+  .kpi-label { font-size: 11px; font-weight: 500; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
+  .kpi-value { font-size: 28px; font-weight: 700; font-family: 'JetBrains Mono', monospace; letter-spacing: -1px; }
+  .kpi-sub { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+
+  /* Charts */
+  .chart-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+    margin-bottom: 28px;
+  }
+
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+  }
+  .chart-card h3 {
+    font-size: 14px; font-weight: 600; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .chart-card h3 .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  .chart-container { position: relative; height: 280px; }
+  .chart-container canvas { width: 100% !important; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; }
+  @media (max-width: 800px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* AQI legend */
+  .aqi-legend {
+    display: flex; flex-wrap: wrap; gap: 10px;
+    margin-bottom: 28px;
+    font-size: 12px;
+  }
+  .aqi-legend .item { display: flex; align-items: center; gap: 6px; }
+  .aqi-legend .swatch { width: 14px; height: 14px; border-radius: 4px; }
+
+  /* Data table */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 28px;
+  }
+  .table-header {
+    padding: 18px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+  }
+  .table-header h3 { font-size: 14px; font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left; padding: 10px 16px;
+    font-size: 11px; font-weight: 600; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  tbody td { padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  tbody tr:hover { background: rgba(124,58,237,0.04); }
+
+  .aqi-badge {
+    display: inline-block; padding: 2px 10px; border-radius: 6px;
+    font-weight: 600; font-size: 12px; font-family: 'JetBrains Mono', monospace;
+  }
+
+  .hidden { display: none !important; }
+
+  /* Export area */
+  .export-row { display: flex; gap: 10px; margin-bottom: 28px; }
+
+  footer { text-align: center; padding: 24px; font-size: 12px; color: var(--text-dim); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo-area">
+      <div class="logo-icon">🌬</div>
+      <h1>PurpleAir Dashboard<span>Sensor #28531 — Full Historical Data</span></h1>
+    </div>
+  </header>
+
+  <!-- Controls bar -->
+  <div class="setup-panel" id="setupPanel">
+    <div class="setup-row">
+      <div class="field">
+        <label>Date Range</label>
+        <select id="dateRange">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="180">Last 6 months</option>
+          <option value="365">Last 1 year</option>
+          <option value="730">Last 2 years</option>
+          <option value="custom">Custom range</option>
+        </select>
+      </div>
+      <div class="field hidden" id="customStartField">
+        <label>Start Date</label>
+        <input type="date" id="customStart" />
+      </div>
+      <div class="field hidden" id="customEndField">
+        <label>End Date</label>
+        <input type="date" id="customEnd" />
+      </div>
+      <div class="field">
+        <label>Average</label>
+        <select id="avgPeriod">
+          <option value="60">1 Hour</option>
+          <option value="360" selected>6 Hours</option>
+          <option value="1440">Daily</option>
+        </select>
+      </div>
+      <button class="btn" id="fetchBtn" onclick="fetchData()">Fetch Data</button>
+    </div>
+    <input type="hidden" id="apiKey" value="9D197913-0538-11EE-BD21-42010A800008" />
+  </div>
+
+  <!-- Status -->
+  <div class="status-bar hidden" id="statusBar"><div class="spinner"></div><span id="statusText">Fetching...</span></div>
+
+  <!-- Dashboard (hidden until data loads) -->
+  <div id="dashboard" class="hidden">
+
+    <!-- AQI Legend -->
+    <div class="aqi-legend">
+      <div class="item"><div class="swatch" style="background:#22c55e"></div> Good (0–50)</div>
+      <div class="item"><div class="swatch" style="background:#eab308"></div> Moderate (51–100)</div>
+      <div class="item"><div class="swatch" style="background:#f97316"></div> USG (101–150)</div>
+      <div class="item"><div class="swatch" style="background:#ef4444"></div> Unhealthy (151–200)</div>
+      <div class="item"><div class="swatch" style="background:#a855f7"></div> Very Unhealthy (201–300)</div>
+      <div class="item"><div class="swatch" style="background:#7f1d1d"></div> Hazardous (301+)</div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <!-- Main AQI chart -->
+    <div class="chart-grid">
+      <div class="chart-card">
+        <h3><div class="dot" style="background:var(--accent)"></div>US EPA AQI Over Time</h3>
+        <div class="chart-container"><canvas id="aqiChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Two-col: PM2.5 raw + Temp/Humidity -->
+    <div class="two-col">
+      <div class="chart-card">
+        <h3><div class="dot" style="background:#38bdf8"></div>PM2.5 Concentration (µg/m³)</h3>
+        <div class="chart-container"><canvas id="pmChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3><div class="dot" style="background:#f97316"></div>Temperature & Humidity</h3>
+        <div class="chart-container"><canvas id="tempHumChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- AQI distribution -->
+    <div class="two-col">
+      <div class="chart-card">
+        <h3><div class="dot" style="background:var(--good)"></div>AQI Category Distribution</h3>
+        <div class="chart-container"><canvas id="distChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3><div class="dot" style="background:#06b6d4"></div>Pressure (mbar)</h3>
+        <div class="chart-container"><canvas id="pressureChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Export -->
+    <div class="export-row">
+      <button class="btn btn-secondary" onclick="exportCSV()">⬇ Export CSV</button>
+      <button class="btn btn-secondary" onclick="fetchData()">🔄 Refresh Data</button>
+    </div>
+
+    <!-- Data table -->
+    <div class="table-wrap">
+      <div class="table-header">
+        <h3>Raw Data (last 50 readings shown)</h3>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>AQI</th>
+              <th>PM2.5 (µg/m³)</th>
+              <th>Temp (°F)</th>
+              <th>Humidity (%)</th>
+              <th>Pressure (mbar)</th>
+            </tr>
+          </thead>
+          <tbody id="dataTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Data from PurpleAir API · Sensor #28531 · AQI calculated using US EPA correction
+  </footer>
+</div>
+
+<script>
+const SENSOR_ID = 28531;
+let rawData = [];
+let charts = {};
+
+// Show/hide custom date fields
+document.getElementById('dateRange').addEventListener('change', e => {
+  const show = e.target.value === 'custom';
+  document.getElementById('customStartField').classList.toggle('hidden', !show);
+  document.getElementById('customEndField').classList.toggle('hidden', !show);
+});
+
+// AQI calculation (US EPA PM2.5)
+function pmToAQI(pm) {
+  const breakpoints = [
+    [0, 12.0, 0, 50],
+    [12.1, 35.4, 51, 100],
+    [35.5, 55.4, 101, 150],
+    [55.5, 150.4, 151, 200],
+    [150.5, 250.4, 201, 300],
+    [250.5, 350.4, 301, 400],
+    [350.5, 500.4, 401, 500]
+  ];
+  if (pm < 0) return 0;
+  for (const [bpLo, bpHi, aqiLo, aqiHi] of breakpoints) {
+    if (pm <= bpHi) {
+      return Math.round(((aqiHi - aqiLo) / (bpHi - bpLo)) * (pm - bpLo) + aqiLo);
+    }
+  }
+  return 500;
+}
+
+function aqiColor(aqi) {
+  if (aqi <= 50) return '#22c55e';
+  if (aqi <= 100) return '#eab308';
+  if (aqi <= 150) return '#f97316';
+  if (aqi <= 200) return '#ef4444';
+  if (aqi <= 300) return '#a855f7';
+  return '#7f1d1d';
+}
+
+function aqiLabel(aqi) {
+  if (aqi <= 50) return 'Good';
+  if (aqi <= 100) return 'Moderate';
+  if (aqi <= 150) return 'USG';
+  if (aqi <= 200) return 'Unhealthy';
+  if (aqi <= 300) return 'Very Unhealthy';
+  return 'Hazardous';
+}
+
+function setStatus(msg, type = 'loading') {
+  const bar = document.getElementById('statusBar');
+  const text = document.getElementById('statusText');
+  bar.classList.remove('hidden', 'error', 'success');
+  bar.querySelector('.spinner').style.display = type === 'loading' ? 'block' : 'none';
+  if (type === 'error') bar.classList.add('error');
+  if (type === 'success') bar.classList.add('success');
+  text.textContent = msg;
+}
+
+async function fetchData() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+
+  const avg = document.getElementById('avgPeriod').value;
+  const rangeVal = document.getElementById('dateRange').value;
+
+  let startTs, endTs;
+  const now = Math.floor(Date.now() / 1000);
+
+  if (rangeVal === 'custom') {
+    const s = document.getElementById('customStart').value;
+    const e = document.getElementById('customEnd').value;
+    if (!s || !e) { alert('Please select start and end dates'); return; }
+    startTs = Math.floor(new Date(s).getTime() / 1000);
+    endTs = Math.floor(new Date(e).getTime() / 1000);
+  } else {
+    const days = parseInt(rangeVal);
+    startTs = now - (days * 86400);
+    endTs = now;
+  }
+
+  document.getElementById('fetchBtn').disabled = true;
+  setStatus('Fetching data from PurpleAir API...');
+
+  const fields = 'pm2.5_cf_1,pm2.5_atm,humidity,temperature,pressure';
+  // PurpleAir limits to ~14 days of hourly data per request, so we paginate
+  const maxWindow = avg <= 60 ? 14 * 86400 : avg <= 360 ? 90 * 86400 : 365 * 86400;
+
+  rawData = [];
+  let cursor = startTs;
+  let requestNum = 0;
+
+  try {
+    while (cursor < endTs) {
+      const chunkEnd = Math.min(cursor + maxWindow, endTs);
+      requestNum++;
+      setStatus(`Fetching chunk ${requestNum}... (${new Date(cursor*1000).toLocaleDateString()} → ${new Date(chunkEnd*1000).toLocaleDateString()})`);
+
+      const url = `https://api.purpleair.com/v1/sensors/${SENSOR_ID}/history?start_timestamp=${cursor}&end_timestamp=${chunkEnd}&average=${avg}&fields=${fields}`;
+
+      const res = await fetch(url, { headers: { 'X-API-Key': apiKey } });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.description || err.error || `HTTP ${res.status}`);
+      }
+
+      const json = await res.json();
+      const fieldOrder = json.fields;
+      const rows = json.data || [];
+
+      console.log('API fields:', fieldOrder);
+      console.log('Sample row:', rows[0]);
+
+      for (const row of rows) {
+        const obj = {};
+        fieldOrder.forEach((f, i) => obj[f] = row[i]);
+        rawData.push(obj);
+      }
+
+      cursor = chunkEnd;
+      // Rate limit: wait 1s between requests
+      if (cursor < endTs) await new Promise(r => setTimeout(r, 1100));
+    }
+
+    // Sort by time
+    rawData.sort((a, b) => (a.time_stamp ?? a.time_stamp_utc ?? 0) - (b.time_stamp ?? b.time_stamp_utc ?? 0));
+
+    // Normalize timestamp field name
+    rawData.forEach(d => {
+      if (!d.time_stamp && d.time_stamp_utc) d.time_stamp = d.time_stamp_utc;
+    });
+
+    // Remove dupes
+    const seen = new Set();
+    rawData = rawData.filter(d => {
+      if (seen.has(d.time_stamp)) return false;
+      seen.add(d.time_stamp);
+      return true;
+    });
+
+    // Calculate AQI for each row
+    rawData.forEach(d => {
+      const pm = d['pm2.5_cf_1'] ?? d['pm2.5_atm'] ?? 0;
+      d.pm25 = pm;
+      d.aqi = pmToAQI(pm);
+      d.temp_f = d.temperature ?? null;
+      d.hum = d.humidity ?? null;
+      d.press = d.pressure ?? null;
+    });
+
+    console.log('Parsed data sample:', rawData.slice(0, 3));
+
+    setStatus(`✓ Loaded ${rawData.length} data points`, 'success');
+    document.getElementById('dashboard').classList.remove('hidden');
+    renderDashboard();
+
+  } catch (err) {
+    setStatus(`Error: ${err.message}`, 'error');
+  }
+
+  document.getElementById('fetchBtn').disabled = false;
+}
+
+function renderDashboard() {
+  renderKPIs();
+  renderAQIChart();
+  renderPMChart();
+  renderTempHumChart();
+  renderDistChart();
+  renderPressureChart();
+  renderTable();
+}
+
+function renderKPIs() {
+  const grid = document.getElementById('kpiGrid');
+  const latest = rawData[rawData.length - 1];
+  const aqis = rawData.map(d => d.aqi).filter(a => a != null);
+  const temps = rawData.map(d => d.temp_f).filter(t => t != null);
+  const hums = rawData.map(d => d.hum).filter(h => h != null);
+
+  const avg = arr => arr.length ? Math.round(arr.reduce((s,v) => s+v, 0) / arr.length) : '—';
+  const max = arr => arr.length ? Math.round(Math.max(...arr)) : '—';
+
+  const latestAqi = latest?.aqi ?? '—';
+  const maxAqi = max(aqis);
+  const avgAqi = avg(aqis);
+
+  grid.innerHTML = `
+    <div class="kpi aqi-current">
+      <div class="kpi-label">Current AQI</div>
+      <div class="kpi-value" style="color:${aqiColor(latestAqi)}">${latestAqi}</div>
+      <div class="kpi-sub">${aqiLabel(latestAqi)}</div>
+    </div>
+    <div class="kpi aqi-avg">
+      <div class="kpi-label">Avg AQI</div>
+      <div class="kpi-value" style="color:${aqiColor(avgAqi)}">${avgAqi}</div>
+      <div class="kpi-sub">Over selected period</div>
+    </div>
+    <div class="kpi aqi-max">
+      <div class="kpi-label">Peak AQI</div>
+      <div class="kpi-value" style="color:${aqiColor(maxAqi)}">${maxAqi}</div>
+      <div class="kpi-sub">Worst reading</div>
+    </div>
+    <div class="kpi temp">
+      <div class="kpi-label">Avg Temp</div>
+      <div class="kpi-value">${avg(temps)}°F</div>
+      <div class="kpi-sub">High: ${max(temps)}°F</div>
+    </div>
+    <div class="kpi humidity">
+      <div class="kpi-label">Avg Humidity</div>
+      <div class="kpi-value">${avg(hums)}%</div>
+      <div class="kpi-sub">Relative humidity</div>
+    </div>
+    <div class="kpi datapoints">
+      <div class="kpi-label">Data Points</div>
+      <div class="kpi-value">${rawData.length.toLocaleString()}</div>
+      <div class="kpi-sub">${new Date(rawData[0].time_stamp*1000).toLocaleDateString()} – ${new Date(rawData[rawData.length-1].time_stamp*1000).toLocaleDateString()}</div>
+    </div>
+  `;
+}
+
+const chartDefaults = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { labels: { color: '#94a3b8', font: { family: 'DM Sans', size: 11 }, boxWidth: 12 } },
+    tooltip: {
+      backgroundColor: '#1e293b',
+      titleColor: '#e2e8f0',
+      bodyColor: '#94a3b8',
+      borderColor: '#334155',
+      borderWidth: 1,
+      titleFont: { family: 'DM Sans', size: 12 },
+      bodyFont: { family: 'JetBrains Mono', size: 11 },
+      padding: 10,
+      cornerRadius: 8
+    }
+  },
+  scales: {
+    x: {
+      type: 'time',
+      ticks: { color: '#475569', font: { family: 'DM Sans', size: 10 }, maxTicksLimit: 12 },
+      grid: { color: 'rgba(51,65,85,0.3)' }
+    },
+    y: {
+      ticks: { color: '#475569', font: { family: 'JetBrains Mono', size: 10 } },
+      grid: { color: 'rgba(51,65,85,0.3)' }
+    }
+  }
+};
+
+function makeTimeData(key) {
+  return rawData.filter(d => d[key] != null).map(d => ({ x: new Date(d.time_stamp * 1000), y: d[key] }));
+}
+
+function destroyChart(name) {
+  if (charts[name]) { charts[name].destroy(); delete charts[name]; }
+}
+
+function renderAQIChart() {
+  destroyChart('aqi');
+  const data = makeTimeData('aqi');
+  const colors = data.map(d => aqiColor(d.y));
+
+  charts.aqi = new Chart(document.getElementById('aqiChart'), {
+    type: 'bar',
+    data: {
+      datasets: [{
+        label: 'AQI',
+        data: data,
+        backgroundColor: colors,
+        borderRadius: 2,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      ...chartDefaults,
+      plugins: {
+        ...chartDefaults.plugins,
+        legend: { display: false },
+        tooltip: {
+          ...chartDefaults.plugins.tooltip,
+          callbacks: {
+            label: ctx => `AQI: ${ctx.parsed.y} (${aqiLabel(ctx.parsed.y)})`
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderPMChart() {
+  destroyChart('pm');
+  charts.pm = new Chart(document.getElementById('pmChart'), {
+    type: 'line',
+    data: {
+      datasets: [{
+        label: 'PM2.5 (CF=1)',
+        data: makeTimeData('pm25'),
+        borderColor: '#38bdf8',
+        backgroundColor: 'rgba(56,189,248,0.08)',
+        fill: true,
+        pointRadius: 0,
+        borderWidth: 1.5,
+        tension: 0.3
+      }]
+    },
+    options: chartDefaults
+  });
+}
+
+function renderTempHumChart() {
+  destroyChart('tempHum');
+  charts.tempHum = new Chart(document.getElementById('tempHumChart'), {
+    type: 'line',
+    data: {
+      datasets: [
+        {
+          label: 'Temperature (°F)',
+          data: makeTimeData('temp_f'),
+          borderColor: '#f97316',
+          backgroundColor: 'rgba(249,115,22,0.06)',
+          fill: true,
+          pointRadius: 0,
+          borderWidth: 1.5,
+          tension: 0.3,
+          yAxisID: 'y'
+        },
+        {
+          label: 'Humidity (%)',
+          data: makeTimeData('hum'),
+          borderColor: '#06b6d4',
+          backgroundColor: 'rgba(6,182,212,0.06)',
+          fill: true,
+          pointRadius: 0,
+          borderWidth: 1.5,
+          tension: 0.3,
+          yAxisID: 'y1'
+        }
+      ]
+    },
+    options: {
+      ...chartDefaults,
+      scales: {
+        ...chartDefaults.scales,
+        y: { ...chartDefaults.scales.y, position: 'left', title: { display: true, text: '°F', color: '#f97316', font: { size: 11 } } },
+        y1: { ...chartDefaults.scales.y, position: 'right', title: { display: true, text: '%', color: '#06b6d4', font: { size: 11 } }, grid: { drawOnChartArea: false } }
+      }
+    }
+  });
+}
+
+function renderDistChart() {
+  destroyChart('dist');
+  const cats = { Good: 0, Moderate: 0, USG: 0, Unhealthy: 0, 'Very Unhealthy': 0, Hazardous: 0 };
+  rawData.forEach(d => { if (d.aqi != null) cats[aqiLabel(d.aqi)]++; });
+  const labels = Object.keys(cats);
+  const values = Object.values(cats);
+  const colors = ['#22c55e', '#eab308', '#f97316', '#ef4444', '#a855f7', '#7f1d1d'];
+
+  charts.dist = new Chart(document.getElementById('distChart'), {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: colors, borderWidth: 0, hoverOffset: 6 }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '65%',
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: { color: '#94a3b8', font: { family: 'DM Sans', size: 11 }, padding: 14, boxWidth: 12 }
+        },
+        tooltip: chartDefaults.plugins.tooltip
+      }
+    }
+  });
+}
+
+function renderPressureChart() {
+  destroyChart('pressure');
+  charts.pressure = new Chart(document.getElementById('pressureChart'), {
+    type: 'line',
+    data: {
+      datasets: [{
+        label: 'Pressure',
+        data: makeTimeData('press'),
+        borderColor: '#06b6d4',
+        backgroundColor: 'rgba(6,182,212,0.08)',
+        fill: true,
+        pointRadius: 0,
+        borderWidth: 1.5,
+        tension: 0.3
+      }]
+    },
+    options: chartDefaults
+  });
+}
+
+function renderTable() {
+  const tbody = document.getElementById('dataTable');
+  const last50 = rawData.slice(-50).reverse();
+  tbody.innerHTML = last50.map(d => {
+    const aqi = d.aqi;
+    const color = aqiColor(aqi);
+    return `<tr>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:12px">${new Date(d.time_stamp*1000).toLocaleString()}</td>
+      <td><span class="aqi-badge" style="background:${color}22;color:${color}">${aqi}</span></td>
+      <td>${d.pm25 != null ? d.pm25.toFixed(1) : '—'}</td>
+      <td>${d.temp_f != null ? Math.round(d.temp_f) : '—'}</td>
+      <td>${d.hum != null ? Math.round(d.hum) : '—'}</td>
+      <td>${d.press != null ? d.press.toFixed(1) : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function exportCSV() {
+  if (!rawData.length) return;
+  const header = 'Timestamp,AQI,AQI_Category,PM2.5_ugm3,Temperature_F,Humidity_pct,Pressure_mbar\n';
+  const rows = rawData.map(d =>
+    `${new Date(d.time_stamp*1000).toISOString()},${d.aqi},${aqiLabel(d.aqi)},${d.pm25?.toFixed(1)??''},${d.temp_f!=null?Math.round(d.temp_f):''},${d.hum!=null?Math.round(d.hum):''},${d.press?.toFixed(1)??''}`
+  ).join('\n');
+  const blob = new Blob([header + rows], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `purpleair_28531_history.csv`;
+  a.click();
+}
+// Auto-fetch on page load
+window.addEventListener('DOMContentLoaded', () => fetchData());
+</script>
+</body>
+</html>
