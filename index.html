@@ -71,6 +71,28 @@
   .hidden{display:none!important}
   .export-row{display:flex;gap:10px;margin-bottom:28px;flex-wrap:wrap}
   footer{text-align:center;padding:24px;font-size:12px;color:var(--text-dim)}
+
+  /* Calendar heatmap */
+  .heatmap-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:28px;overflow-x:auto}
+  .heatmap-wrap h3{font-size:14px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+  .heatmap-wrap h3 .dot{width:8px;height:8px;border-radius:50%}
+  .heatmap-year{margin-bottom:20px}
+  .heatmap-year-label{font-size:13px;font-weight:600;color:var(--text-dim);margin-bottom:8px;font-family:'JetBrains Mono',monospace}
+  .heatmap-grid{display:flex;gap:2px}
+  .heatmap-week{display:flex;flex-direction:column;gap:2px}
+  .heatmap-cell{width:13px;height:13px;border-radius:2px;cursor:pointer;transition:transform 0.1s}
+  .heatmap-cell:hover{transform:scale(1.6);z-index:2;position:relative}
+  .heatmap-months{display:flex;gap:2px;margin-bottom:4px;padding-left:0;font-size:10px;color:var(--text-dim)}
+  .heatmap-month-label{font-family:'JetBrains Mono',monospace}
+  .heatmap-tooltip{position:fixed;background:#1e293b;color:#e2e8f0;padding:8px 12px;border-radius:8px;font-size:12px;pointer-events:none;z-index:100;border:1px solid #334155;font-family:'JetBrains Mono',monospace;display:none}
+
+  /* Alert panel */
+  .alert-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;margin-bottom:28px}
+  .alert-panel h3{font-size:14px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .alert-panel h3 .dot{width:8px;height:8px;border-radius:50%}
+  .alert-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .alert-status{font-size:12px;color:var(--text-dim);margin-left:8px}
+  .alert-status.active{color:var(--good)}
 </style>
 </head>
 <body>
@@ -123,6 +145,47 @@
       <div class="chart-card"><h3><div class="dot" style="background:var(--good)"></div>AQI Category Distribution</h3><div class="chart-container"><canvas id="distChart"></canvas></div></div>
       <div class="chart-card"><h3><div class="dot" style="background:#06b6d4"></div>Pressure (mbar)</h3><div class="chart-container"><canvas id="pressureChart"></canvas></div></div>
     </div>
+    <!-- Alert panel -->
+    <div class="alert-panel">
+      <h3><div class="dot" style="background:#ef4444"></div>AQI Alerts</h3>
+      <div class="alert-row">
+        <div class="field"><label>Alert when AQI exceeds</label>
+          <select id="alertThreshold">
+            <option value="0">Off</option>
+            <option value="50">50 (Moderate)</option>
+            <option value="100" selected>100 (USG)</option>
+            <option value="150">150 (Unhealthy)</option>
+            <option value="200">200 (Very Unhealthy)</option>
+          </select>
+        </div>
+        <div class="field"><label>Check every</label>
+          <select id="alertInterval">
+            <option value="5">5 min (~1 pt/check)</option>
+            <option value="10">10 min</option>
+            <option value="15" selected>15 min</option>
+            <option value="30">30 min</option>
+            <option value="60">60 min</option>
+          </select>
+        </div>
+        <button class="btn btn-secondary" onclick="toggleAlerts()" id="alertToggle">🔔 Enable Alerts</button>
+        <button class="btn btn-secondary hidden" onclick="snoozeAlerts()" id="snoozeBtn">😴 Snooze 1hr</button>
+        <span class="alert-status" id="alertStatus"></span>
+      </div>
+    </div>
+
+    <!-- Year-over-Year comparison -->
+    <div class="chart-card" style="margin-bottom:28px">
+      <h3><div class="dot" style="background:#eab308"></div>Year-over-Year AQI Comparison</h3>
+      <div class="chart-container" style="height:320px"><canvas id="yoyChart"></canvas></div>
+    </div>
+
+    <!-- Calendar Heatmap -->
+    <div class="heatmap-wrap">
+      <h3><div class="dot" style="background:var(--good)"></div>Daily AQI Calendar</h3>
+      <div id="heatmapContainer"></div>
+    </div>
+    <div class="heatmap-tooltip" id="heatmapTooltip"></div>
+
     <div class="export-row">
       <button class="btn btn-secondary" onclick="exportCSV()">⬇ Export CSV</button>
       <button class="btn btn-secondary" onclick="Object.values(charts).forEach(c=>{if(c.resetZoom)c.resetZoom()})">🔍 Reset Zoom</button>
@@ -293,7 +356,7 @@ async function loadData() {
 }
 
 // ── RENDERING ──────────────────────────────────────────────────
-function renderDashboard() { renderKPIs(); renderAQIChart(); renderPMChart(); renderTempHumChart(); renderDistChart(); renderPressureChart(); renderTable(); }
+function renderDashboard() { renderKPIs(); renderAQIChart(); renderPMChart(); renderTempHumChart(); renderDistChart(); renderPressureChart(); renderYoYChart(); renderHeatmap(); renderTable(); }
 
 function renderKPIs() {
   const g = document.getElementById('kpiGrid');
@@ -350,6 +413,282 @@ function exportCSV(){
   const h='Timestamp,Source,AQI,AQI_Category,PM2.5_ugm3,Temperature_F,Humidity_pct,Pressure_mbar\n';
   const r=rawData.map(d=>`${new Date(d.time_stamp*1000).toISOString()},${d.source},${d.aqi},${aqiLabel(d.aqi)},${d.pm25?.toFixed(1)??''},${d.temp_f!=null?Math.round(d.temp_f):''},${d.hum!=null?Math.round(d.hum):''},${d.press?.toFixed(1)??''}`).join('\n');
   const b=new Blob([h+r],{type:'text/csv'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='purpleair_28531_history.csv';a.click();
+}
+
+// ── YEAR-OVER-YEAR CHART ───────────────────────────────────────
+function renderYoYChart() {
+  dc('yoy');
+  // Monthly averages per year for clean comparison
+  const byYear = {};
+  const allData = csvData.length > 0 ? csvData : rawData;
+  allData.forEach(d => {
+    if (d.aqi == null) return;
+    const dt = new Date(d.time_stamp * 1000);
+    const yr = dt.getFullYear();
+    const mo = dt.getMonth(); // 0-11
+    if (!byYear[yr]) byYear[yr] = {};
+    if (!byYear[yr][mo]) byYear[yr][mo] = [];
+    byYear[yr][mo].push(d.aqi);
+  });
+
+  const yearColors = ['#22c55e','#38bdf8','#f97316','#a855f7','#eab308','#ef4444','#06b6d4','#ec4899'];
+  const years = Object.keys(byYear).sort();
+  const datasets = years.map((yr, i) => {
+    const data = [];
+    for (let m = 0; m < 12; m++) {
+      if (byYear[yr][m] && byYear[yr][m].length > 0) {
+        const avg = Math.round(byYear[yr][m].reduce((s,v)=>s+v,0) / byYear[yr][m].length);
+        data.push({ x: new Date(2000, m, 15), y: avg });
+      }
+    }
+    return {
+      label: yr,
+      data,
+      borderColor: yearColors[i % yearColors.length],
+      backgroundColor: yearColors[i % yearColors.length] + '18',
+      fill: false,
+      pointRadius: 4,
+      pointHoverRadius: 6,
+      borderWidth: 2.5,
+      tension: 0.4
+    };
+  });
+
+  charts.yoy = new Chart(document.getElementById('yoyChart'), {
+    type: 'line',
+    data: { datasets },
+    options: {
+      ...CD,
+      scales: {
+        ...CD.scales,
+        x: {
+          ...CD.scales.x,
+          type: 'time',
+          time: { unit: 'month', displayFormats: { month: 'MMM' } },
+          min: new Date('2000-01-01'),
+          max: new Date('2000-12-31'),
+          ticks: { ...CD.scales.x.ticks, maxTicksLimit: 12 }
+        }
+      },
+      plugins: {
+        ...CD.plugins,
+        zoom: zoomOpts,
+        tooltip: {
+          ...CD.plugins.tooltip,
+          callbacks: {
+            title: ctx => {
+              const d = new Date(ctx[0].parsed.x);
+              return d.toLocaleString('en-US', { month: 'long' });
+            },
+            label: ctx => ` ${ctx.dataset.label}: AQI ${ctx.parsed.y}`
+          }
+        },
+        legend: { labels: { color: '#94a3b8', font: { family: 'DM Sans', size: 11 }, boxWidth: 12 } }
+      }
+    }
+  });
+}
+
+// ── CALENDAR HEATMAP ───────────────────────────────────────────
+function renderHeatmap() {
+  const container = document.getElementById('heatmapContainer');
+  container.innerHTML = '';
+
+  // Build daily averages from ALL data
+  const allData = csvData.length > 0 ? csvData : rawData;
+  const dailyAqi = {};
+  allData.forEach(d => {
+    if (d.aqi == null) return;
+    const dt = new Date(d.time_stamp * 1000);
+    const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+    if (!dailyAqi[key]) dailyAqi[key] = [];
+    dailyAqi[key].push(d.aqi);
+  });
+
+  // Average per day
+  const dayAvg = {};
+  Object.entries(dailyAqi).forEach(([k, vals]) => {
+    dayAvg[k] = Math.round(vals.reduce((s,v)=>s+v,0)/vals.length);
+  });
+
+  // Get year range
+  const years = [...new Set(Object.keys(dayAvg).map(k => parseInt(k.split('-')[0])))].sort();
+
+  const tooltip = document.getElementById('heatmapTooltip');
+
+  years.forEach(year => {
+    const yearDiv = document.createElement('div');
+    yearDiv.className = 'heatmap-year';
+
+    const label = document.createElement('div');
+    label.className = 'heatmap-year-label';
+    label.textContent = year;
+    yearDiv.appendChild(label);
+
+    // Month labels
+    const monthRow = document.createElement('div');
+    monthRow.className = 'heatmap-months';
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    // Approximate month positions (each month ~4.3 weeks)
+    let monthHtml = '';
+    for (let m = 0; m < 12; m++) {
+      const w = m === 0 ? 0 : Math.floor((new Date(year, m, 1).getTime() - new Date(year, 0, 1).getTime()) / (7 * 86400000));
+      monthHtml += `<span class="heatmap-month-label" style="position:absolute;left:${w * 15}px">${months[m]}</span>`;
+    }
+    monthRow.style.position = 'relative';
+    monthRow.style.height = '16px';
+    monthRow.style.marginBottom = '4px';
+    monthRow.innerHTML = monthHtml;
+    yearDiv.appendChild(monthRow);
+
+    const grid = document.createElement('div');
+    grid.className = 'heatmap-grid';
+
+    // Build weeks
+    const jan1 = new Date(year, 0, 1);
+    const dec31 = new Date(year, 11, 31);
+    const startDay = jan1.getDay(); // 0=Sun
+
+    let current = new Date(jan1);
+    current.setDate(current.getDate() - startDay); // Back to Sunday
+
+    while (current <= dec31 || current.getDay() !== 0) {
+      const week = document.createElement('div');
+      week.className = 'heatmap-week';
+
+      for (let d = 0; d < 7; d++) {
+        const cell = document.createElement('div');
+        cell.className = 'heatmap-cell';
+
+        const key = `${current.getFullYear()}-${String(current.getMonth()+1).padStart(2,'0')}-${String(current.getDate()).padStart(2,'0')}`;
+        const aqi = dayAvg[key];
+        const inYear = current.getFullYear() === year;
+
+        if (inYear && aqi != null) {
+          cell.style.background = aqiColor(aqi);
+          cell.style.opacity = Math.max(0.4, Math.min(1, aqi / 150));
+
+          const dateStr = current.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          cell.addEventListener('mouseenter', (e) => {
+            tooltip.style.display = 'block';
+            tooltip.innerHTML = `${dateStr}: AQI <strong style="color:${aqiColor(aqi)}">${aqi}</strong> (${aqiLabel(aqi)})`;
+            tooltip.style.left = (e.clientX + 12) + 'px';
+            tooltip.style.top = (e.clientY - 36) + 'px';
+          });
+          cell.addEventListener('mousemove', (e) => {
+            tooltip.style.left = (e.clientX + 12) + 'px';
+            tooltip.style.top = (e.clientY - 36) + 'px';
+          });
+          cell.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+        } else {
+          cell.style.background = inYear ? 'rgba(51,65,85,0.2)' : 'transparent';
+        }
+
+        week.appendChild(cell);
+        current.setDate(current.getDate() + 1);
+      }
+      grid.appendChild(week);
+      if (current > dec31 && current.getDay() === 0) break;
+    }
+
+    yearDiv.appendChild(grid);
+    container.appendChild(yearDiv);
+  });
+}
+
+// ── AQI ALERTS ─────────────────────────────────────────────────
+let alertInterval = null;
+let alertEnabled = false;
+let snoozedUntil = 0;
+
+function toggleAlerts() {
+  if (alertEnabled) {
+    clearInterval(alertInterval);
+    alertInterval = null;
+    alertEnabled = false;
+    snoozedUntil = 0;
+    document.getElementById('alertToggle').textContent = '🔔 Enable Alerts';
+    document.getElementById('alertStatus').textContent = '';
+    document.getElementById('alertStatus').className = 'alert-status';
+    document.getElementById('snoozeBtn').classList.add('hidden');
+    return;
+  }
+
+  if (!('Notification' in window)) {
+    alert('Your browser does not support notifications');
+    return;
+  }
+
+  Notification.requestPermission().then(perm => {
+    if (perm !== 'granted') {
+      alert('Notification permission denied. Enable it in your browser settings.');
+      return;
+    }
+
+    alertEnabled = true;
+    snoozedUntil = 0;
+    document.getElementById('alertToggle').textContent = '🔕 Disable Alerts';
+    document.getElementById('snoozeBtn').classList.remove('hidden');
+    const mins = parseInt(document.getElementById('alertInterval').value);
+    document.getElementById('alertStatus').textContent = `● Monitoring every ${mins} min...`;
+    document.getElementById('alertStatus').className = 'alert-status active';
+
+    checkAQIAlert();
+    alertInterval = setInterval(checkAQIAlert, mins * 60 * 1000);
+  });
+}
+
+function snoozeAlerts() {
+  snoozedUntil = Date.now() + 60 * 60 * 1000;
+  const resumeTime = new Date(snoozedUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  document.getElementById('alertStatus').textContent = `💤 Snoozed until ${resumeTime}`;
+  document.getElementById('snoozeBtn').textContent = '💤 Snoozed';
+  document.getElementById('snoozeBtn').disabled = true;
+  // Re-enable button after snooze expires
+  setTimeout(() => {
+    snoozedUntil = 0;
+    document.getElementById('snoozeBtn').textContent = '😴 Snooze 1hr';
+    document.getElementById('snoozeBtn').disabled = false;
+    if (alertEnabled) {
+      const mins = parseInt(document.getElementById('alertInterval').value);
+      document.getElementById('alertStatus').textContent = `● Monitoring every ${mins} min...`;
+    }
+  }, 60 * 60 * 1000);
+}
+
+async function checkAQIAlert() {
+  const threshold = parseInt(document.getElementById('alertThreshold').value);
+  if (threshold === 0 || !alertEnabled) return;
+  const snoozed = Date.now() < snoozedUntil;
+
+  try {
+    const apiKey = document.getElementById('apiKey').value.trim();
+    const url = `https://api.purpleair.com/v1/sensors/${SENSOR_ID}?fields=pm2.5_cf_1`;
+    const res = await fetch(url, { headers: { 'X-API-Key': apiKey } });
+    if (!res.ok) return;
+    const json = await res.json();
+    const pm = json.sensor?.['pm2.5_cf_1'];
+    if (pm == null) return;
+    const aqi = pmToAQI(pm);
+
+    const statusEl = document.getElementById('alertStatus');
+    if (snoozed) {
+      const resumeTime = new Date(snoozedUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      statusEl.textContent = `💤 Snoozed until ${resumeTime} (AQI: ${aqi})`;
+    } else {
+      statusEl.textContent = `● AQI: ${aqi} (${new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})})`;
+    }
+
+    if (aqi >= threshold && !snoozed) {
+      new Notification('⚠️ PurpleAir AQI Alert', {
+        body: `AQI is ${aqi} (${aqiLabel(aqi)}) — above your threshold of ${threshold}`,
+        icon: '🌬️',
+        tag: 'purpleair-alert'
+      });
+    }
+  } catch (e) {
+    console.log('Alert check failed:', e);
+  }
 }
 
 // ── BOOT ───────────────────────────────────────────────────────
